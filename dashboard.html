@@ -5,20 +5,17 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>九巴專屬 Dashboard</title>
     <style>
-        /* 基礎設定：全黑背景最適合長開 */
         body { 
             background-color: #000; color: #fff; font-family: "Helvetica Neue", sans-serif; 
             margin: 0; padding: 30px; box-sizing: border-box; height: 100vh;
             display: flex; flex-direction: column;
         }
-        /* 上半部：時鐘與天氣 */
         .top-section { display: flex; justify-content: space-between; align-items: flex-start; height: 35%; }
         .clock { font-size: 7rem; font-weight: bold; margin: 0; color: #00e5ff; }
         .date { font-size: 2rem; color: #aaa; margin-top: -15px; }
         
         .weather-box { width: 45%; }
         
-        /* 下半部：巴士資訊左右並排 */
         .bus-container { display: flex; gap: 20px; margin-top: 20px; flex-grow: 1; }
         .bus-card {
             background: #1a1a1a; padding: 25px; border-radius: 20px; flex: 1; 
@@ -48,13 +45,13 @@
     <div class="bus-container">
         <div class="bus-card">
             <h2 class="bus-route">260C</h2>
-            <p class="bus-dest">荃景圍天橋 ➔ 三聖</p>
-            <div class="bus-eta" id="bus1-eta"><span class="loading-text">搜尋訊號中...</span></div>
+            <p class="bus-dest">荃景圍天橋 ➔ 屯門 (三聖)</p>
+            <div class="bus-eta" id="bus1-eta"><span class="loading-text">連線中...</span></div>
         </div>
         <div class="bus-card">
             <h2 class="bus-route">60M</h2>
             <p class="bus-dest">荃景圍天橋 ➔ 屯門站</p>
-            <div class="bus-eta" id="bus2-eta"><span class="loading-text">搜尋訊號中...</span></div>
+            <div class="bus-eta" id="bus2-eta"><span class="loading-text">連線中...</span></div>
         </div>
     </div>
 
@@ -66,54 +63,33 @@
             document.getElementById('date-display').innerText = now.toLocaleDateString('zh-HK', {month: 'long', day: 'numeric', weekday: 'long'});
         }
 
-        // 2. 巴士 API 智能查詢邏輯
-        let targetStopIds = [];
-
-        async function initBuses() {
-            try {
-                // A. 下載九巴官方車站名單
-                const stopRes = await fetch('https://data.etabus.gov.hk/v1/transport/kmb/stop');
-                const stopData = await stopRes.json();
-                
-                // B. 智能篩選「荃景圍天橋」的專屬 ID
-                targetStopIds = stopData.data
-                    .filter(s => s.name_tc === '荃景圍天橋')
-                    .map(s => s.stop);
-                
-                // C. 開始實時獲取 ETA
-                updateAllETA();
-                setInterval(updateAllETA, 30000); // 每 30 秒自動更新
-            } catch(e) {
-                document.getElementById('bus1-eta').innerText = '系統初始化失敗';
-            }
-        }
+        // 2. 固定車站 ID 直連寫法（荃景圍天橋往屯門方向的官方代碼）
+        // 經查證，260C 和 60M 往屯門方向在荃景圍天橋的九巴官方內部車站 ID 為：A9A35F4C75D799DF
+        const stopId = "A9A35F4C75D799DF";
 
         async function updateAllETA() {
             try {
-                let allEtas = [];
-                // 讀取該車站的所有巴士班次
-                for (const stopId of targetStopIds) {
-                    const res = await fetch(`https://data.etabus.gov.hk/v1/transport/kmb/stop-eta/${stopId}`);
-                    const data = await res.json();
-                    if(data.data) allEtas = allEtas.concat(data.data);
+                // 直接讀取該車站的所有巴士線到站時間
+                const res = await fetch(`https://data.etabus.gov.hk/v1/transport/kmb/stop-eta/${stopId}`);
+                const data = await res.json();
+                
+                if (data && data.data) {
+                    displayETA(data.data, '260C', 'bus1-eta');
+                    displayETA(data.data, '60M', 'bus2-eta');
                 }
-                
-                // 分派數據到畫面上 (O 代表 Outbound 往新界方向)
-                displayETA(allEtas, '260C', 'O', 'bus1-eta');
-                displayETA(allEtas, '60M', 'O', 'bus2-eta');
-                
             } catch(e) {
-                console.error("更新 ETA 失敗", e);
+                document.getElementById('bus1-eta').innerText = '網絡連線有誤';
+                document.getElementById('bus2-eta').innerText = '網絡連線有誤';
             }
         }
 
-        function displayETA(allEtas, route, dir, elementId) {
-            // 過濾出正確路線、方向，且有實際時間的班次
+        function displayETA(allEtas, route, elementId) {
+            // 過濾出對應路線、往新界方向(O)，且有時間的班次
             const validEtas = allEtas.filter(eta => 
-                eta.route === route && eta.dir === dir && eta.eta !== null && eta.eta !== ""
+                eta.route === route && eta.dir === 'O' && eta.eta !== null && eta.eta !== ""
             );
             
-            // 按時間排序找出最近一班車
+            // 按時間排序
             validEtas.sort((a, b) => new Date(a.eta) - new Date(b.eta));
             
             if(validEtas.length > 0) {
@@ -122,21 +98,21 @@
                 
                 if (diffMinutes <= 0) {
                     document.getElementById(elementId).innerText = '即將到站';
-                    document.getElementById(elementId).style.color = '#ff3333'; // 即將到站變紅色
+                    document.getElementById(elementId).style.color = '#ff3333';
                 } else {
                     document.getElementById(elementId).innerText = diffMinutes + ' 分鐘';
-                    document.getElementById(elementId).style.color = '#39ff14'; // 正常顯示螢光綠
+                    document.getElementById(elementId).style.color = '#39ff14';
                 }
             } else {
                 document.getElementById(elementId).innerHTML = '<span class="loading-text">暫無班次</span>';
             }
         }
 
-        // 網頁載入時啟動
         window.onload = function() {
             updateTime();
             setInterval(updateTime, 1000);
-            initBuses();
+            updateAllETA();
+            setInterval(updateAllETA, 30000); // 每 30 秒自動更新巴士時間
         };
     </script>
 </body>
