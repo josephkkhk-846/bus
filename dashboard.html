@@ -2,72 +2,63 @@
 <html lang="zh-HK">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>九巴專屬 Dashboard</title>
+    <title>巴士到站時間 (260C / 60M)</title>
     <style>
-        body { background-color: #000; color: #fff; font-family: sans-serif; margin: 0; padding: 20px; height: 100vh; display: flex; flex-direction: column; }
-        .clock { font-size: 5rem; color: #00e5ff; font-weight: bold; margin: 0; }
-        .bus-container { display: flex; gap: 15px; margin-top: 20px; flex-grow: 1; }
-        .bus-card { background: #222; padding: 20px; border-radius: 15px; flex: 1; text-align: center; }
-        .bus-route { font-size: 3rem; color: #ffcc00; margin: 0; }
-        .bus-eta { font-size: 3.5rem; color: #39ff14; font-weight: bold; }
+        body { background: #000; color: #fff; font-family: sans-serif; display: flex; flex-direction: column; align-items: center; padding-top: 50px; }
+        .clock { font-size: 6rem; color: #00e5ff; font-weight: bold; }
+        .container { display: flex; gap: 40px; margin-top: 50px; }
+        .card { background: #1a1a1a; padding: 40px; border-radius: 20px; text-align: center; width: 300px; }
+        .route { font-size: 4rem; color: #ffcc00; }
+        .eta { font-size: 5rem; color: #39ff14; font-weight: bold; }
     </style>
 </head>
 <body>
     <div class="clock" id="clock">00:00</div>
-    <div class="bus-container">
-        <div class="bus-card">
-            <h2 class="bus-route">260C</h2>
-            <div class="bus-eta" id="bus1">讀取中...</div>
+    <div class="container">
+        <div class="card">
+            <div class="route">260C</div>
+            <div class="eta" id="bus1">載入中...</div>
         </div>
-        <div class="bus-card">
-            <h2 class="bus-route">60M</h2>
-            <div class="bus-eta" id="bus2">讀取中...</div>
+        <div class="card">
+            <div class="route">60M</div>
+            <div class="eta" id="bus2">載入中...</div>
         </div>
     </div>
 
     <script>
-        function updateTime() {
-            var now = new Date();
-            document.getElementById('clock').innerText = now.toLocaleTimeString('zh-HK', {hour12: false, hour: '2-digit', minute:'2-digit'});
-        }
-        setInterval(updateTime, 1000);
-        updateTime();
+        // 更新時鐘
+        setInterval(() => {
+            document.getElementById('clock').innerText = new Date().toLocaleTimeString('zh-HK', {hour12: false, hour: '2-digit', minute:'2-digit'});
+        }, 1000);
 
-        // 關鍵修改：使用 cors-anywhere 作為強效中轉，確保舊 iPad 能夠穿透安全牆
-        var stopId = "A9A35F4C75D799DF";
-        var apiUrl = "https://data.etabus.gov.hk/v1/transport/kmb/stop-eta/" + stopId;
-        var proxy = "https://corsproxy.io/?" + encodeURIComponent(apiUrl);
-
-        function fetchBus() {
-            var xhr = new XMLHttpRequest();
-            xhr.open("GET", proxy, true);
-            xhr.onreadystatechange = function() {
-                if (xhr.readyState === 4 && xhr.status === 200) {
-                    var data = JSON.parse(xhr.responseText);
-                    processETA(data.data, '260C', 'bus1');
-                    processETA(data.data, '60M', 'bus2');
-                }
-            };
-            xhr.send();
-        }
-
-        function processETA(etas, route, id) {
-            var el = document.getElementById(id);
-            var found = false;
-            for(var i=0; i<etas.length; i++) {
-                if(etas[i].route === route && etas[i].dir === 'O') {
-                    var diff = Math.floor((new Date(etas[i].eta) - new Date()) / 60000);
-                    el.innerText = (diff <= 0) ? "即將到站" : diff + " 分鐘";
-                    found = true;
-                    break;
-                }
+        // 使用更穩定的請求方式
+        async function fetchETA() {
+            try {
+                // 我們依然需要一個代理來繞過瀏覽器的 CORS 安全限制，這裡使用另一個穩定的代理服務
+                const response = await fetch('https://api.allorigins.win/get?url=' + encodeURIComponent('https://data.etabus.gov.hk/v1/transport/kmb/stop-eta/A9A35F4C75D799DF'));
+                const json = await response.json();
+                const data = JSON.parse(json.contents).data;
+                
+                updateDisplay(data, '260C', 'bus1');
+                updateDisplay(data, '60M', 'bus2');
+            } catch (err) {
+                document.getElementById('bus1').innerText = "失敗";
+                document.getElementById('bus2').innerText = "失敗";
             }
-            if(!found) el.innerText = "未有班次";
         }
-        
-        fetchBus();
-        setInterval(fetchBus, 30000);
+
+        function updateDisplay(data, route, id) {
+            const bus = data.find(b => b.route === route && b.dir === 'O');
+            if (bus && bus.eta) {
+                const mins = Math.floor((new Date(bus.eta) - new Date()) / 60000);
+                document.getElementById(id).innerText = mins <= 0 ? "到站" : mins + " 分";
+            } else {
+                document.getElementById(id).innerText = "無班次";
+            }
+        }
+
+        fetchETA();
+        setInterval(fetchETA, 30000);
     </script>
 </body>
 </html>
